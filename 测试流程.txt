@@ -1,0 +1,351 @@
+下面给出一个完整的 snippets 测试案例，用于验证多人游戏流程（包括注册、登录、创建房间、加入房间、顺序轮流叫数等）。假设你的服务器端代码在  
+`snippets.lab4.example2_rpc_server`（使用 `-l 4 -e 2` 启动），  
+而客户端代码在  
+`snippets.lab4.example4_rpc_client_cli`（使用 `-l 4 -e 4` 启动）。
+
+---
+
+### 1. 启动服务器
+
+在终端中执行：
+
+```bash
+python -m snippets -l 4 -e 2 8080
+```
+
+**预期输出示例**：
+
+```
+# Running module snippets.lab4.example2_rpc_server from ...
+MindRoll Server is running with a minimal register <username> <password> approach and sequential turn calling.
+MindRoll Server listening on 0.0.0.0:8080
+```
+
+此时服务器正在端口 8080 监听客户端连接。
+
+---
+
+### 2. 玩家1操作
+
+#### 2.1 启动玩家1客户端
+
+在另一个终端中执行：
+
+```bash
+python -m snippets -l 4 -e 4 127.0.0.1 8080 register
+```
+
+**预期输出**（进入交互式命令行）：
+
+```
+# Running module snippets.lab4.example4_rpc_client_cli from ...
+=== MindRoll Client Ready ===
+Available commands:
+  register <user> <pass>
+  login <user> <pass>
+  create_room <room>
+  join_room <room> <user>
+  call_number <room> <user> <number>
+  reveal_result <room> <user>
+  get_game_state <room>
+  load_token <file>
+  exit
+```
+
+#### 2.2 注册玩家1
+
+在客户端命令提示符下输入：
+
+```
+register player1 p1pass
+```
+
+**预期输出**：
+
+```
+Enter command: register player1 p1pass
+📤 Sending request: {"name":"register","args":["player1","p1pass"],"metadata":{}}
+📥 Received response: {"result":"Register success for player1","error":null}
+✅ Response: Register success for player1
+```
+
+#### 2.3 登录玩家1
+
+输入：
+
+```
+login player1 p1pass
+```
+
+**预期输出**（token 为示例字符串）：
+
+```
+Enter command: login player1 p1pass
+📤 Sending request: {"name":"login","args":["player1","p1pass"],"metadata":{}}
+📥 Received response: {"result":{"token":"abc123-token"},"error":null}
+✅ Response: {"token": "abc123-token"}
+✅ Logged in! token=abc123-token
+```
+
+此时玩家1的客户端保存了 token。
+
+#### 2.4 创建房间
+
+输入：
+
+```
+create_room room1
+```
+
+**预期输出**：
+
+```
+Enter command: create_room room1
+📤 Sending request: {"name":"create_room","args":["room1"],"metadata":{"token":{"token":"abc123-token"}}}
+📥 Received response: {"result":"Room room1 created successfully","error":null}
+✅ Response: Room room1 created successfully
+```
+
+#### 2.5 玩家1加入房间
+
+输入：
+
+```
+join_room room1 player1
+```
+
+**预期输出**（服务器分配一个骰子）：
+
+```
+Enter command: join_room room1 player1
+📤 Sending request: {"name":"join_room","args":["room1","player1"],"metadata":{"token":{"token":"abc123-token"}}}
+📥 Received response: {"result":"player1 joined room room1, dice: 4 red","error":null}
+✅ Response: player1 joined room room1, dice: 4 red
+```
+
+---
+
+### 3. 玩家2操作
+
+#### 3.1 启动玩家2客户端
+
+在第三个终端中执行：
+
+```bash
+python -m snippets -l 4 -e 4 127.0.0.1 8080 register
+```
+
+**预期输出**同上，进入交互命令行。
+
+#### 3.2 注册玩家2
+
+输入：
+
+```
+register player2 p2pass
+```
+
+**预期输出**：
+
+```
+Enter command: register player2 p2pass
+📤 Sending request: {"name":"register","args":["player2","p2pass"],"metadata":{}}
+📥 Received response: {"result":"Register success for player2","error":null}
+✅ Response: Register success for player2
+```
+
+#### 3.3 登录玩家2
+
+输入：
+
+```
+login player2 p2pass
+```
+
+**预期输出**（token 为示例字符串）：
+
+```
+Enter command: login player2 p2pass
+📤 Sending request: {"name":"login","args":["player2","p2pass"],"metadata":{}}
+📥 Received response: {"result":{"token":"def456-token"},"error":null}
+✅ Response: {"token": "def456-token"}
+✅ Logged in! token=def456-token
+```
+
+#### 3.4 玩家2加入房间
+
+输入：
+
+```
+join_room room1 player2
+```
+
+**预期输出**（此时服务器在 `room1` 中记录玩家顺序）：
+
+```
+Enter command: join_room room1 player2
+📤 Sending request: {"name":"join_room","args":["room1","player2"],"metadata":{"token":{"token":"def456-token"}}}
+📥 Received response: {"result":"player2 joined room room1, dice: 6 blue","error":null}
+✅ Response: player2 joined room room1, dice: 6 blue
+```
+
+玩家2成功加入房间，且其加入顺序会被记录在 `players_order` 中。
+
+---
+
+### 4. 游戏轮流叫数
+
+#### 4.1 玩家1叫数
+
+在玩家1客户端输入：
+
+```
+call_number room1 player1 10
+```
+
+**预期输出**：
+
+```
+Enter command: call_number room1 player1 10
+📤 Sending request: {"name":"call_number","args":["room1","player1","10"],"metadata":{"token":{"token":"abc123-token"}}}
+📥 Received response: {"result":"player1 called 10, next turn: player2","error":null}
+✅ Response: player1 called 10, next turn: player2
+```
+
+此时轮到玩家2。
+
+#### 4.2 玩家2叫数
+
+在玩家2客户端输入：
+
+```
+call_number room1 player2 12
+```
+
+**预期输出**：
+
+```
+Enter command: call_number room1 player2 12
+📤 Sending request: {"name":"call_number","args":["room1","player2","12"],"metadata":{"token":{"token":"def456-token"}}}
+📥 Received response: {"result":"player2 called 12, next turn: player1","error":null}
+✅ Response: player2 called 12, next turn: player1
+```
+
+轮到玩家1。
+
+#### 4.3 再轮到玩家1叫数
+
+在玩家1客户端输入：
+
+```
+call_number room1 player1 15
+```
+
+**预期输出**：
+
+```
+Enter command: call_number room1 player1 15
+📤 Sending request: {"name":"call_number","args":["room1","player1","15"],"metadata":{"token":{"token":"abc123-token"}}}
+📥 Received response: {"result":"player1 called 15, next turn: player2","error":null}
+✅ Response: player1 called 15, next turn: player2
+```
+
+如此，玩家1和玩家2将依次轮流叫数，顺序由 `players_order` 来控制。
+
+---
+
+### 5. 公布结果
+
+假设由玩家2来公布结果，在玩家2客户端输入：
+
+```
+reveal_result room1 player2
+```
+
+**预期输出**（服务器根据规则判定胜负，示例输出）：
+
+```
+Enter command: reveal_result room1 player2
+📤 Sending request: {"name":"reveal_result","args":["room1","player2"],"metadata":{"token":{"token":"def456-token"}}}
+📥 Received response: {"result":"player2 wins! Now score= 1","error":null}
+✅ Response: player2 wins! Now score= 1
+```
+
+服务器根据所有玩家的骰子点数、颜色、当前叫数计算出胜负，并更新玩家分数。
+
+---
+
+### 6. 查看房间状态
+
+在任一客户端输入：
+
+```
+get_game_state room1
+```
+
+**预期输出**（显示房间所有信息，包括玩家信息、顺序、当前轮次、叫数等）：
+
+```
+Enter command: get_game_state room1
+📤 Sending request: {"name":"get_game_state","args":["room1"],"metadata":{"token":{"token":"abc123-token"}}}
+📥 Received response: {"result": {"players": {"player1": {"dice_number":4, "dice_color":"red", "score":0}, "player2": {"dice_number":6, "dice_color":"blue", "score":1}}, "players_order": ["player1", "player2"], "current_turn": "player1", "called_number": 15, "winner": "player2"}, "error": null}
+✅ Response: { ... } 
+```
+
+---
+
+### 7. 退出客户端
+
+在各个客户端输入 `exit`，退出交互式命令行。服务器仍继续运行，等待其它连接或可通过 Ctrl+C 终止服务器进程。
+
+---
+
+## **总结**
+
+完整的 snippets 测试案例流程如下：
+
+1. **启动服务器**：
+   ```bash
+   python -m snippets -l 4 -e 2 8080
+   ```
+2. **玩家1**（在终端2）：
+   - 启动客户端：
+     ```bash
+     python -m snippets -l 4 -e 4 127.0.0.1 8080 register
+     ```
+   - 执行：
+     ```
+     register player1 p1pass
+     login player1 p1pass
+     create_room room1
+     join_room room1 player1
+     call_number room1 player1 10
+     call_number room1 player1 15
+     ```
+3. **玩家2**（在终端3）：
+   - 启动客户端：
+     ```bash
+     python -m snippets -l 4 -e 4 127.0.0.1 8080 register
+     ```
+   - 执行：
+     ```
+     register player2 p2pass
+     login player2 p2pass
+     join_room room1 player2
+     call_number room1 player2 12
+     reveal_result room1 player2
+     ```
+4. **查看房间状态**：
+   在任一客户端输入：
+   ```
+   get_game_state room1
+   ```
+5. **退出**：
+   输入 `exit` 退出客户端。
+
+通过以上步骤，你就可以验证：  
+- 用户可以先注册、登录；  
+- 房间创建后，两个玩家依照加入顺序轮流叫数；  
+- 游戏结束时公布结果，并能查询房间状态。  
+
+这就是一个完整的 snippets 测试案例。
