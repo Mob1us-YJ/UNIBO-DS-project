@@ -65,15 +65,17 @@ class MindRollClient(CustomClient):
             print(f"✅ Logged in! token={self.token}")
         else:
             print("❌ Login failed or server error")
+        return resp
 
     # ---------------------- Game Commands ----------------------
     def create_room(self, room_id):
         print(f"🏠 Creating room: {room_id}")
-        self.send_request("create_room", room_id)
+        return self.send_request("create_room", room_id)
+        
 
     def join_room(self, room_id, player_name):
         print(f"👤 {player_name} is joining room: {room_id}")
-        self.send_request("join_room", room_id, player_name)
+        return self.send_request("join_room", room_id, player_name)
 
     def call_number(self, room_id, player_name, number):
         print(f"🎲 {player_name} calls number {number} in room {room_id}")

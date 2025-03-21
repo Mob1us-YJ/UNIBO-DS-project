@@ -7,8 +7,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".
 
 from src.common.models import GameObject
 from src.client.controller import Controller
-from view import View
-from rpc_client import MindRollClient
+from src.client.view import View
+from src.client.rpc_client import MindRollClient
 
 
 #initialize the client
@@ -173,13 +173,15 @@ def input_screen(title, account_var_name, password_var_name, next_state):
     account_box = pygame.Rect(250, 150, 300, 50)
     password_box = pygame.Rect(250, 250, 300, 50)
     confirm_button = pygame.Rect(300, 350, 200, 50)
-    
+    back_button = pygame.Rect(300, 420, 200, 50) 
+
     pygame.draw.rect(screen, GRAY, account_box)
     pygame.draw.rect(screen, WHITE, account_box, 2)
     pygame.draw.rect(screen, GRAY, password_box)
     pygame.draw.rect(screen, WHITE, password_box, 2)
     draw_button("Confirm", confirm_button, BLUE)
-    
+    draw_button("Back", back_button, BLUE)
+
     account_var = globals()[account_var_name]
     password_var = globals()[password_var_name]
     
@@ -213,18 +215,21 @@ def input_screen(title, account_var_name, password_var_name, next_state):
                 active_input = "account"
             elif password_box.collidepoint(event.pos):
                 active_input = "password"
+            elif back_button.collidepoint(event.pos):
+                current_state = STATE_MAIN_MENU
             elif confirm_button.collidepoint(event.pos):
                 if title == "Register":
                     # 调用客户端的注册方法
                     response = client.register(register_account, register_password)
                     if response and not response.error:
                         show_message("Successfully Registered！")
-                        current_state = next_state
+                        current_state = STATE_MAIN_MENU
                     else:
                         show_message("Register Failed:" + (response.error if response else "Unknown Error"))
                 elif title == "Login":
                     # 调用客户端的登录方法
                     response = client.login(login_account, login_password)
+                    join_response = client.join_room("room1", login_account)
                     if response and not response.error:
                         show_message("Successfully Login！")
                         current_state = next_state
@@ -282,9 +287,11 @@ def mod_screen():
     
     one_vs_one_button = pygame.Rect(300, 200, 200, 50)
     multiplayer_button = pygame.Rect(300, 300, 200, 50)
+    back_button = pygame.Rect(300, 420, 200, 50)  
     
     draw_button("create a room", one_vs_one_button, BLUE)
     draw_button("join a room", multiplayer_button, BLUE)
+    draw_button("Back", back_button, BLUE)
     
     pygame.display.flip()
     
@@ -300,16 +307,18 @@ def mod_screen():
                     show_message("Create Room Succeed!")
                     current_state = STATE_GAME
                 else:
-                    show_message("Fail to Create Room:" + (response.error))
+                    show_message("Fail to Create Room:" + (response.error if response else "Unknown Error"))
             elif multiplayer_button.collidepoint(event.pos):
                 number_of_players = 3  # 服务器决定实际人数
                 new_room_flag = False
                 response = client.join_room("room1", login_account)  # 加入房间
                 if response and not response.error:
-                    show_message("Join Room Succeed:")
+                    show_message("Join Room Succeed!")
                     current_state = STATE_GAME
                 else:
-                    show_message("Fail to Join Room:" + (response.error if response else "Authentication required: Please login"))
+                    show_message("Fail to Join Room:" + (response.error if response else "Unknown Error"))
+            elif back_button.collidepoint(event.pos):
+                current_state = STATE_MAIN_MENU
     return True
 
 
@@ -407,7 +416,8 @@ def login_wait_screen():
 
     # 模拟服务器在2秒后返回成功信号
     time.sleep(2)  # 等待2秒
-    server_login_success = False  # 这里你需要改成实际服务器返回的状态
+    response = client.login(login_account, login_password)
+    server_login_success = response   # 这里你需要改成实际服务器返回的状态
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
