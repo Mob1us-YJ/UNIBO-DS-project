@@ -32,6 +32,9 @@ class GameRoom:
 
     def call_number(self, player_name, number):
         """玩家叫数"""
+        if len(self.players) < 2:
+            raise ValueError("Need at least 2 players to start the game")
+
         if self.current_turn != player_name:
             raise ValueError("Not your turn to call")
 
@@ -53,6 +56,8 @@ class GameRoom:
 
     def reveal_result(self, player_name):
         """揭示结果"""
+        if len(self.players) < 2:
+            raise ValueError("Need at least 2 players to start the game")
         if self.current_turn != player_name:
             raise ValueError("Not your turn to reveal")
 

@@ -10,6 +10,7 @@ from src.common.utils import Request, Response, serialize, deserialize
 from src.common.users.impl import InMemoryUserDatabase, InMemoryAuthenticationService
 from src.common.users import Role, Token, Credentials, User
 from src.server.game_logic import GameRoom
+from src.server.backup_server import BackupServer
 
 class MindRollServer:
     def __init__(self, host='0.0.0.0', port=8080):
@@ -18,11 +19,27 @@ class MindRollServer:
         self.server_socket = None
         self.running = False
 
+        self.games = {}
+        self.backup_server = None
+
         self.__user_db = InMemoryUserDatabase(debug=True)
         self.__auth_service = InMemoryAuthenticationService(self.__user_db, debug=True)
 
         # 房间数据结构: { room_id: GameRoom }
         self.games = {}
+    
+    def set_backup_server(self, backup_server):
+        """设置备份服务器"""
+        self.backup_server = backup_server
+
+    def sync_data(self):
+        """同步数据到备份服务器"""
+        if self.backup_server:
+            self.backup_server.update_games(self.games)
+
+    def update_games(self, games):
+        """更新游戏数据"""
+        self.games = games
 
     def start(self):
         """启动服务器"""
