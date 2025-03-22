@@ -12,23 +12,15 @@ from src.client.controller import Controller
 from src.client.view import View
 from src.client.rpc_client import MindRollClient
 
-# def handle_broadcast_message(game_state):
-#     """处理广播消息，更新分数和骰子信息"""
-#     global player_score, player_dice
-#     player_score = game_state["players"][login_account]["score"]
-#     player_dice = (game_state["players"][login_account]["dice_color"],
-#                    game_state["players"][login_account]["dice_number"])
-#     show_message(f"Broadcast: {game_state['result_str']}")
-# ------------------- 初始化客户端 -------------------
-server_ip = "127.0.0.1"
-server_port = 8080
-client = MindRollClient((server_ip, server_port))
-# client.start_broadcast_listener()  # 启动广播监听线程
-# client.set_broadcast_callback(handle_broadcast_message)  # 设置广播消息的回调函数
-
 pygame.init()
 pygame.font.init()
 
+# ------------------- 客户端连接配置 -------------------
+server_ip = "127.0.0.1"
+server_port = 8080
+client = MindRollClient((server_ip, server_port))
+
+# ------------------- 窗口基本参数 -------------------
 SCREEN_SIZE = (800, 600)
 screen = pygame.display.set_mode(SCREEN_SIZE)
 pygame.display.set_caption("MindRoll")
@@ -42,6 +34,7 @@ RED = (255, 0, 0)
 def get_font(size):
     return pygame.font.Font(None, size)
 
+# ------------------- 游戏状态枚举 -------------------
 STATE_MAIN_MENU = "main_menu"
 STATE_REGISTER = "register"
 STATE_LOGIN = "login"
@@ -53,13 +46,33 @@ STATE_RULES = "rules"
 current_state = STATE_MAIN_MENU
 
 room_name = ""
-room_name_new = ""
-room_name_exist = ""
 selected_room = ""
 
+register_account = ""
+register_password = ""
+login_account = ""
+login_password = ""
+
+# 本地玩家的分数和骰子
+player_score = 0
+player_dice = ("red", 1)  # (dice_color, dice_number)
+
+# 用于在某些场景输入数字
+input_text = ""
+
+# 用于在注册/登录时切换输入框焦点
+active_input = "account"
+
+# --------------- 定时拉取相关 ---------------
+last_pull_time = 0.0
+PULL_INTERVAL = 1.0  # 每1秒拉一次
+
+# 缓存服务器返回的房间状态
+cached_game_state = None
+
+# ------------------- Dice资源 -------------------
 DICE_COLORS = ["red", "yellow", "green", "blue", "black"]
 DICE_SIZE = (300, 300)
-
 
 def load_dice_images():
     images = {}
@@ -74,12 +87,8 @@ def load_dice_images():
 
 dice_images = load_dice_images()
 
-def get_random_dice():
-    color = random.choice(DICE_COLORS)
-    number = random.randint(1, 6)
-    return color, number
-
 def show_message(message):
+    """屏幕中间弹窗显示 message，停顿2秒后返回"""
     popup_width, popup_height = 600, 100
     popup_x = (SCREEN_SIZE[0] - popup_width) // 2
     popup_y = (SCREEN_SIZE[1] - popup_height) // 2
@@ -96,16 +105,6 @@ def show_message(message):
     pygame.display.flip()
     pygame.time.delay(2000)
 
-register_account = ""
-register_password = ""
-login_account = ""
-login_password = ""
-
-player_score = 0
-player_dice = get_random_dice()
-input_text = ""
-active_input = "account"
-
 def draw_button(text, rect, color, font_size=36):
     pygame.draw.rect(screen, color, rect)
     font = get_font(font_size)
@@ -113,6 +112,7 @@ def draw_button(text, rect, color, font_size=36):
     text_rect = text_surface.get_rect(center=rect.center)
     screen.blit(text_surface, text_rect)
 
+# ------------------- 主要场景函数 -------------------
 def main_menu():
     global current_state
     screen.fill(BLACK)
@@ -146,7 +146,7 @@ def main_menu():
     return True
 
 def input_screen(title, account_var_name, password_var_name, next_state):
-    global current_state, register_account, register_password, login_account, login_password, active_input, client
+    global current_state, register_account, register_password, login_account, login_password, active_input
 
     screen.fill(BLACK)
     title_text = get_font(30).render(title, True, WHITE)
@@ -182,16 +182,16 @@ def input_screen(title, account_var_name, password_var_name, next_state):
             if event.key == pygame.K_TAB:
                 active_input = "password" if active_input == "account" else "account"
             elif event.key == pygame.K_BACKSPACE:
-                if active_input == "account" and len(globals()[account_var_name]) > 0:
+                if active_input == "account" and len(globals()[account_var_name])>0:
                     globals()[account_var_name] = globals()[account_var_name][:-1]
-                elif active_input == "password" and len(globals()[password_var_name]) > 0:
+                elif active_input == "password" and len(globals()[password_var_name])>0:
                     globals()[password_var_name] = globals()[password_var_name][:-1]
             elif event.key == pygame.K_RETURN:
                 current_state = next_state
             elif event.unicode.isalnum():
-                if active_input == "account" and len(globals()[account_var_name]) < 10:
+                if active_input == "account" and len(globals()[account_var_name])<10:
                     globals()[account_var_name] += event.unicode
-                elif active_input == "password" and len(globals()[password_var_name]) < 10:
+                elif active_input == "password" and len(globals()[password_var_name])<10:
                     globals()[password_var_name] += event.unicode
 
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -205,17 +205,17 @@ def input_screen(title, account_var_name, password_var_name, next_state):
                 if title == "Register":
                     resp = client.register(register_account, register_password)
                     if resp and not resp.error:
-                        show_message("Successfully Registered！")
+                        show_message("Successfully Registered!")
                         current_state = STATE_MAIN_MENU
                     else:
-                        show_message("Register Failed:" + (resp.error if resp else "Unknown Error"))
+                        show_message("Register Failed: " + (resp.error if resp else "Unknown Error"))
                 elif title == "Login":
                     resp = client.login(login_account, login_password)
                     if resp and not resp.error:
-                        show_message("Successfully Login！")
+                        show_message("Successfully Login!")
                         current_state = next_state
                     else:
-                        show_message("Login Failed：" + (resp.error if resp else "Unknown Error"))
+                        show_message("Login Failed: " + (resp.error if resp else "Unknown Error"))
     return True
 
 def rules_screen():
@@ -225,12 +225,9 @@ def rules_screen():
         "MindRoll Rules:",
         "1. Each player gets a random dice.",
         "2. Players take turns to Call a number.",
-        "3. A player can choose to Reveal the result.",
-        "4. If the call is greater than sum of all dice, the one chose to reveal wins.",
-        "   If the call is less than sum of all dice, the one was asked to reveal wins.",
-        "   And if the number or color of their two dice is same, the one was asked",
-        "   to reveal wins.",
-        "5. If a player times out and doesn't reconnect in 120s, the game resets for others.",
+        "3. A player can choose to Reveal the result => resets for next round.",
+        "4. If the call is greater than sum, that revealer wins, else loses.",
+        "5. If a player times out 120s & doesn't reconnect, the game resets for others.",
         "6. If the game has started, new players cannot join until it resets or ends.",
         "Press Back to return."
     ]
@@ -255,7 +252,7 @@ def rules_screen():
     return True
 
 def mod_screen():
-    global current_state, room_name, room_name_exist, room_name_new, selected_room
+    global current_state, room_name, selected_room
 
     screen.fill(BLACK)
     title_text = get_font(50).render("Select Game Mode", True, WHITE)
@@ -271,7 +268,6 @@ def mod_screen():
     draw_button("Reconnect", reconnect_button, BLUE)
     draw_button("Back", back_button, BLUE)
 
-    # 房间名输入框
     input_box = pygame.Rect(250, 150, 300, 50)
     pygame.draw.rect(screen, GRAY, input_box)
     pygame.draw.rect(screen, WHITE, input_box, 2)
@@ -294,50 +290,46 @@ def mod_screen():
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             if create_button.collidepoint(event.pos):
-                room_name_new = room_name
-                create_resp = client.create_room(room_name_new)
-                if create_resp and not create_resp.error:
-                    show_message(f"Created room: {room_name_new}!")
-                    join_resp = client.join_room(room_name_new, login_account)
-                    if join_resp and not join_resp.error:
-                        show_message(f"Joined room: {room_name_new}!")
-                        selected_room = room_name_new
-                        room_name = ""
-                        current_state = STATE_GAME
-                    else:
-                        # 如果错误是“无法加入该房间，游戏已经开始”则明确提示
-                        if join_resp and join_resp.error == "无法加入该房间，游戏已经开始。":
-                            show_message("Cannot join: game already started!")
-                        else:
-                            show_message("Join created room failed: " + (join_resp.error if join_resp else "Unknown Error"))
-                else:
-                    show_message("Fail to Create Room: " + (create_resp.error if create_resp else "Unknown Error"))
-
-            elif join_button.collidepoint(event.pos):
-                room_name_exist = room_name
-                join_resp = client.join_room(room_name_exist, login_account)
-                if join_resp and not join_resp.error:
-                    show_message(f"Joined room: {room_name_exist}!")
-                    selected_room = room_name_exist
-                    room_name = ""
-                    current_state = STATE_GAME
-                else:
-                    # 检查是否是“无法加入该房间，游戏已经开始。”
-                    if join_resp and join_resp.error == "无法加入该房间，游戏已经开始。":
-                        show_message("Cannot join: game already started!")
-                    else:
-                        show_message("Fail to Join Room: " + (join_resp.error if join_resp else "Unknown Error"))
-
-            elif reconnect_button.collidepoint(event.pos):
-                if room_name.strip():
-                    recon_resp = client.reconnect(room_name, login_account)
-                    if recon_resp and not recon_resp.error:
-                        show_message(f"Reconnected to {room_name}!")
+                resp_create = client.create_room(room_name)
+                if resp_create and not resp_create.error:
+                    show_message(f"Created room: {room_name}")
+                    resp_join = client.join_room(room_name, login_account)
+                    if resp_join and not resp_join.error:
+                        show_message(f"Joined room: {room_name}")
                         selected_room = room_name
                         room_name = ""
                         current_state = STATE_GAME
                     else:
-                        show_message("Reconnect failed: " + (recon_resp.error if recon_resp else "Unknown Error"))
+                        if resp_join and resp_join.error == "Cannot join: game already started!":
+                            show_message("Cannot join: game already started!")
+                        else:
+                            show_message("Join created room failed: " + (resp_join.error if resp_join else "Unknown Error"))
+                else:
+                    show_message("Fail to Create Room: " + (resp_create.error if resp_create else "Unknown Error"))
+
+            elif join_button.collidepoint(event.pos):
+                resp_join = client.join_room(room_name, login_account)
+                if resp_join and not resp_join.error:
+                    show_message(f"Joined room: {room_name}")
+                    selected_room = room_name
+                    room_name = ""
+                    current_state = STATE_GAME
+                else:
+                    if resp_join and resp_join.error == "Cannot join: game already started!":
+                        show_message("Cannot join: game already started!")
+                    else:
+                        show_message("Fail to Join Room: " + (resp_join.error if resp_join else "Unknown Error"))
+
+            elif reconnect_button.collidepoint(event.pos):
+                if room_name.strip():
+                    resp_reconn = client.reconnect(room_name, login_account)
+                    if resp_reconn and not resp_reconn.error:
+                        show_message(f"Reconnected to {room_name}")
+                        selected_room = room_name
+                        room_name = ""
+                        current_state = STATE_GAME
+                    else:
+                        show_message("Reconnect failed: " + (resp_reconn.error if resp_reconn else "Unknown Error"))
                 else:
                     show_message("Please input the room name to reconnect.")
 
@@ -346,36 +338,57 @@ def mod_screen():
 
     return True
 
+# ------------------- 轮询间隔全局 -------------------
+last_pull_time = 0.0
+PULL_INTERVAL = 1.0
+cached_game_state = None  # 缓存服务器返回的房间状态
+
 def game_screen():
-    global current_state, player_dice, input_text, selected_room
-    global player_score
+    global current_state, player_dice, input_text, selected_room, player_score
+    global last_pull_time, cached_game_state
 
     screen.fill(BLACK)
     font = get_font(30)
 
+    # -- 轮询逻辑：每隔 PULL_INTERVAL 秒调用 get_game_state --
+    now = time.time()
+    if selected_room and (now - last_pull_time > PULL_INTERVAL):
+        last_pull_time = now
+        resp = client.get_game_state(selected_room)
+        if resp and not resp.error:
+            cached_game_state = resp.result
+
+            # 若服务器端有 last_result_str => 显示
+            last_result_str = cached_game_state.get("last_result_str", None)
+            if last_result_str:
+                show_message(last_result_str)
+
+            # 更新本地玩家的骰子/分数
+            if login_account in cached_game_state.get("players", {}):
+                pinfo = cached_game_state["players"][login_account]
+                player_dice = (pinfo["dice_color"], pinfo["dice_number"])
+                player_score = pinfo["score"]
+
+            # 如果房间玩家已空 => 回到主菜单
+            if not cached_game_state["players"]:
+                show_message("Room is empty or removed; returning to menu.")
+                current_state = STATE_MAIN_MENU
+        else:
+            show_message("Failed to get game state. Possibly room removed.")
+            current_state = STATE_MAIN_MENU
+
+    # ------------------- 以下保持你的布局不变 -------------------
+    # 先从 cached_game_state 里拿到所需信息
     current_call_number = 0
     current_turn_player = "Unknown"
     players_in_room = 0
+    if cached_game_state:
+        current_call_number = cached_game_state.get("called_number", 0)
+        current_turn_player = cached_game_state.get("current_turn", "Unknown")
+        players_dict = cached_game_state.get("players", {})
+        players_in_room = len(players_dict)
 
-    if selected_room:
-        resp = client.get_game_state(selected_room)
-        if resp and not resp.error:
-            game_state = resp.result
-            current_call_number = game_state.get("called_number", 0)
-            current_turn_player = game_state.get("current_turn", "Unknown")
-            players_dict = game_state.get("players", {})
-            players_in_room = len(players_dict)
-
-            # 若突然发现房间空了 => 说明服务器可能踢掉了玩家或已删房
-            # 可以提示并回到主菜单
-            if len(players_dict) == 0:
-                show_message("The room is gone or no players left; returning to menu.")
-                current_state = STATE_MAIN_MENU
-        else:
-            # 如果 get_game_state 失败 => 说明可能房间已被删除
-            show_message("Failed to get game state. Room might be removed.")
-            current_state = STATE_MAIN_MENU
-
+    # 界面布局
     room_info = font.render(f"Current Room: {selected_room if selected_room else 'None'}", True, WHITE)
     screen.blit(room_info, (20, 20))
 
@@ -391,28 +404,35 @@ def game_screen():
     turn_info = font.render(f"Current Turn: {current_turn_player}", True, WHITE)
     screen.blit(turn_info, (20, 180))
 
+    player_info = font.render(f"User: {login_account}", True, WHITE)
+    screen.blit(player_info, (400, 20))
+
+    # 画骰子
     dice_color, dice_number = player_dice
     dice_image = dice_images[dice_color][dice_number]
     screen.blit(dice_image, (50, 230))
 
+    # 输入框
     input_box = pygame.Rect(450, 200, 100, 50)
     pygame.draw.rect(screen, GRAY, input_box)
     pygame.draw.rect(screen, WHITE, input_box, 2)
     text_surface = font.render(input_text, True, BLACK)
     screen.blit(text_surface, (input_box.x + 10, input_box.y + 10))
 
+    # 按钮
     call_button = pygame.Rect(600, 200, 150, 50)
     reveal_button = pygame.Rect(600, 300, 150, 50)
-    back_button = pygame.Rect(600, 400, 150, 50)
-    leave_button = pygame.Rect(600, 500, 150, 50)
+    #back_button = pygame.Rect(600, 400, 150, 50)
+    leave_button = pygame.Rect(600, 400, 150, 50)
 
     draw_button("Call", call_button, BLUE)
     draw_button("Reveal", reveal_button, BLUE)
-    draw_button("Back", back_button, BLUE)
+    #draw_button("Back", back_button, BLUE)
     draw_button("Leave Room", leave_button, BLUE)
 
     pygame.display.flip()
 
+    # ------------------- 事件处理 -------------------
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             return False
@@ -421,14 +441,15 @@ def game_screen():
             if event.key == pygame.K_BACKSPACE:
                 input_text = input_text[:-1]
             elif event.key == pygame.K_RETURN:
+                # 回车 => call
                 try:
                     call_value = int(input_text)
                     if selected_room:
-                        resp = client.call_number(selected_room, login_account, call_value)
-                        if resp and not resp.error:
+                        resp_call = client.call_number(selected_room, login_account, call_value)
+                        if resp_call and not resp_call.error:
                             show_message(f"Call success: {call_value}")
                         else:
-                            show_message(f"Call failed: {(resp.error if resp else 'Unknown error')}")
+                            show_message(f"Call failed: {(resp_call.error if resp_call else 'Unknown error')}")
                     else:
                         show_message("No room selected!")
                 except ValueError:
@@ -438,18 +459,18 @@ def game_screen():
                 input_text += event.unicode
 
         if event.type == pygame.MOUSEBUTTONDOWN:
-            if back_button.collidepoint(event.pos):
-                current_state = STATE_MAIN_MENU
+            # if back_button.collidepoint(event.pos):
+            #     current_state = STATE_MAIN_MENU
 
-            elif call_button.collidepoint(event.pos):
+            if call_button.collidepoint(event.pos):
                 if selected_room:
                     try:
                         call_value = int(input_text)
-                        resp = client.call_number(selected_room, login_account, call_value)
-                        if resp and not resp.error:
+                        resp_call = client.call_number(selected_room, login_account, call_value)
+                        if resp_call and not resp_call.error:
                             show_message(f"Call success: {call_value}")
                         else:
-                            show_message(f"Call failed: {(resp.error if resp else 'Unknown error')}")
+                            show_message(f"Call failed: {(resp_call.error if resp_call else 'Unknown error')}")
                     except ValueError:
                         show_message("Please input a valid number.")
                     input_text = ""
@@ -458,29 +479,35 @@ def game_screen():
 
             elif reveal_button.collidepoint(event.pos):
                 if selected_room:
-                    resp = client.reveal_result(selected_room, login_account)
-                    if resp and not resp.error:
-                        game_state = resp.result
-                        player_score = game_state["players"][login_account]["score"]
-                        player_dice = (game_state["players"][login_account]["dice_color"],
-                                        game_state["players"][login_account]["dice_number"])    
-                        show_message(f"Reveal: {game_state['result_str']}")
+                    resp_reveal = client.reveal_result(selected_room, login_account)
+                    if resp_reveal and not resp_reveal.error:
+                        result_info = resp_reveal.result
+                        # 本地立即显示
+                        show_message(f"Reveal: {result_info['result_str']}")
+
+                        # 更新本地玩家信息
+                        if login_account in result_info["players"]:
+                            pinfo = result_info["players"][login_account]
+                            player_score = pinfo["score"]
+                            player_dice = (pinfo["dice_color"], pinfo["dice_number"])
+
+                        # 强制让下轮立即拉取
+                        last_pull_time = 0
                     else:
-                        show_message(f"Reveal failed: {(resp.error if resp else 'Unknown Error')}")
+                        show_message(f"Reveal failed: {(resp_reveal.error if resp_reveal else 'Unknown Error')}")
                 else:
                     show_message("No room selected!")
 
             elif leave_button.collidepoint(event.pos):
                 if selected_room:
-                    resp = client.leave_room(selected_room, login_account)
-                    if resp and not resp.error:
+                    resp_leave = client.leave_room(selected_room, login_account)
+                    if resp_leave and not resp_leave.error:
                         show_message("Left the room successfully.")
                         current_state = STATE_MAIN_MENU
                     else:
-                        show_message(f"Leave room failed: {(resp.error if resp else 'Unknown Error')}")
+                        show_message(f"Leave room failed: {(resp_leave.error if resp_leave else 'Unknown Error')}")
                 else:
                     show_message("No room selected!")
-
     return True
 
 def login_wait_screen():
@@ -494,6 +521,7 @@ def login_wait_screen():
     current_state = STATE_MOD_SCREEN
     return True
 
+# ------------------- 主循环 -------------------
 running = True
 while running:
     if current_state == STATE_MAIN_MENU:

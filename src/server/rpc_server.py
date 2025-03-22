@@ -1,4 +1,5 @@
 # src/server/rpc_server.py
+
 import socket
 import threading
 import json
@@ -10,6 +11,7 @@ from src.common.utils import Request, Response, serialize, deserialize
 from src.common.users.impl import InMemoryUserDatabase, InMemoryAuthenticationService
 from src.common.users import Role, Token, Credentials, User
 from src.server.game_logic import GameRoom
+from src.server.backup_server import BackupServer
 
 class MindRollServer:
     def __init__(self, host='0.0.0.0', port=8080):
@@ -18,14 +20,29 @@ class MindRollServer:
         self.server_socket = None
         self.running = False
 
+        self.games = {}
+        self.backup_server = None
+
         self.__user_db = InMemoryUserDatabase(debug=True)
         self.__auth_service = InMemoryAuthenticationService(self.__user_db, debug=True)
 
-        # 房间数据结构: { room_id: GameRoom }
+        # { room_id: GameRoom(...) }
         self.games = {}
 
+    def set_backup_server(self, backup_server):
+         """设置备份服务器"""
+         self.backup_server = backup_server
+
+    def sync_data(self):
+         """同步数据到备份服务器"""
+         if self.backup_server:
+            self.backup_server.update_games(self.games)
+
+    def update_games(self, games):
+        """更新游戏数据"""
+        self.games = games
+
     def start(self):
-        """启动服务器"""
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.bind((self.host, self.port))
         self.server_socket.listen(5)
@@ -44,7 +61,6 @@ class MindRollServer:
         print("MindRoll Server stopped")
 
     def handle_client(self, client_socket):
-        """处理客户端请求"""
         user_token_str = None
         try:
             while True:
@@ -68,7 +84,7 @@ class MindRollServer:
                     self.send_response(client_socket, error_resp)
                     continue
 
-                # 若带token则记录下来
+                # 若带token则记录
                 if 'token' in request_obj.metadata:
                     token_dict = request_obj.metadata['token']
                     if 'token' in token_dict:
@@ -82,18 +98,15 @@ class MindRollServer:
 
                 self.send_response(client_socket, response_obj)
         finally:
-            # 断开时标记断线
             if user_token_str:
                 self.mark_player_disconnected(user_token_str)
             client_socket.close()
 
     def send_response(self, client_socket, response_obj):
-        """发送响应给客户端"""
         serialized = serialize(response_obj)
         client_socket.sendall(serialized.encode('utf-8'))
 
     def mark_player_disconnected(self, token_str):
-        """标记玩家断开"""
         token_obj = self.__auth_service.validate_token_by_str(token_str)
         if not token_obj:
             return
@@ -103,7 +116,7 @@ class MindRollServer:
             if username in game.players:
                 if len(game.players) == 1:
                     del self.games[room_id]
-                    print(f"Room {room_id} removed because the only player ({username}) disconnected.")
+                    print(f"Room {room_id} removed (only player {username} disconnected).")
                 else:
                     pinfo = game.players[username]
                     if pinfo.get("connected", True):
@@ -112,7 +125,7 @@ class MindRollServer:
                         print(f"⚠️ Player {username} in room {room_id} is now disconnected.")
                 break
 
-  # ==================== Register & Login ====================
+    # ============= Register & Login ============
     def register(self, request: Request) -> Response:
         if len(request.args) < 2:
             return Response(None, "Usage: register <username> <password>")
@@ -152,10 +165,8 @@ class MindRollServer:
         if required_role != Role.USER and token_obj.user.role != required_role:
             raise ValueError(f"Operation requires {required_role}, but user role is {token_obj.user.role}")
         return token_obj
-    
 
     def __handle_request(self, request: Request):
-        """根据请求类型调用相应的处理方法"""
         if request.name == "register":
             return self.register(request)
         elif request.name == "login":
@@ -177,13 +188,13 @@ class MindRollServer:
         else:
             raise ValueError(f"Unknown method: {request.name}")
 
-    # ==================== 游戏逻辑相关方法 ====================
+    # ============== Game Logic Calls ============
     def create_room(self, request):
         room_id = request.args[0]
         if room_id in self.games:
             return Response(None, "Room already exists")
-
         self.games[room_id] = GameRoom(room_id)
+        self.sync_data()
         return Response(f"Room {room_id} created successfully", None)
 
     def join_room(self, request):
@@ -193,10 +204,13 @@ class MindRollServer:
         room_id, req_player_name = request.args[:2]
         if room_id not in self.games:
             return Response(None, "Room does not exist")
-
         game = self.games[room_id]
+        # 如果游戏已开始（即已经有叫数），则拒绝新玩家加入
+        if game.called_number is not None:
+            return Response(None, "Game Started, can't join")
         try:
             game.add_player(req_player_name)
+            self.sync_data()
             return Response(f"{req_player_name} joined room {room_id}", None)
         except ValueError as e:
             return Response(None, str(e))
@@ -209,11 +223,16 @@ class MindRollServer:
         game = self.games[room_id]
         try:
             game.call_number(req_player_name, number)
+            self.sync_data()
             return Response(f"{req_player_name} called {number}, next turn: {game.current_turn}", None)
         except ValueError as e:
             return Response(None, str(e))
 
     def reveal_result(self, request):
+        """
+        当本玩家点击“Reveal” => game.reveal_result() => 返回本轮结果和新状态
+        其它玩家下次拉取 get_game_state 就能看到 game.last_result_str + 新骰子
+        """
         room_id, req_player_name = request.args[:2]
         if room_id not in self.games:
             return Response(None, "Room does not exist")
@@ -221,10 +240,8 @@ class MindRollServer:
         game = self.games[room_id]
         try:
             result_info = game.reveal_result(req_player_name)
-            for player_info in game.players.values():
-                client_socket = player_info.get("client_socket")
-                if client_socket:
-                    self.send_response(client_socket, Response(result_info, None))
+            self.sync_data()
+            # 这里 result_info["result_str"] 是本轮结果
             return Response(result_info, None)
         except ValueError as e:
             return Response(None, str(e))
@@ -233,17 +250,20 @@ class MindRollServer:
         room_id = request.args[0]
         if room_id not in self.games:
             return Response(None, "Room does not exist")
-
         game = self.games[room_id]
-        game.check_reconnection_timeout()
+        game.check_reconnection_timeout()  # 检查断线玩家是否超时，若超时则流局并重置
+        game.maybe_clear_result()          # 检查是否超过结果显示时间（流局3秒，其他5秒），清空 last_result_str
+
         game_state = {
-        "players": game.players,
-        "players_order": game.players_order,
-        "current_turn": game.current_turn,
-        "called_number": game.called_number,
-        "winner": game.winner
+            "players": game.players,
+            "players_order": game.players_order,
+            "current_turn": game.current_turn,
+            "called_number": game.called_number,
+            "winner": game.winner,
+            "last_result_str": game.last_result_str
         }
         return Response(game_state, None)
+
 
     def leave_room(self, request):
         room_id, req_player_name = request.args[:2]
@@ -252,7 +272,8 @@ class MindRollServer:
 
         game = self.games[room_id]
         try:
-            if game.remove_player(req_player_name):
+            emptied = game.remove_player(req_player_name)
+            if emptied:
                 del self.games[room_id]
                 return Response(f"Player {req_player_name} left room {room_id}; room closed (no players).", None)
             return Response(f"Player {req_player_name} left room {room_id} successfully.", None)
@@ -265,47 +286,29 @@ class MindRollServer:
             return Response(None, "Room does not exist")
 
         game = self.games[room_id]
-        try:
-            player_info = game.players[req_player_name]
-            if player_info.get("connected", True):
-                return Response(None, "You are already connected. No need to reconnect.")
-
-            disconnected_time = player_info.get("disconnected_time", None)
-            if disconnected_time is None:
-                return Response(None, "No disconnected timestamp found. Can't reconnect.")
-
-            if time.time() - disconnected_time > 120:
-                return Response(None, "Reconnection time (120s) has expired.")
-
-            player_info["connected"] = True
-            player_info["disconnected_time"] = None
-            return Response(f"Reconnection successful for {req_player_name}.", None)
-        except KeyError:
+        if req_player_name not in game.players:
             return Response(None, "Player not in this room. Please join instead?")
 
-    def __check_authorization(self, request, required_role: Role = Role.USER):
-        """检查用户认证"""
-        if 'token' not in request.metadata:
-            raise ValueError("Authentication required (no token)")
-        token_dict = request.metadata['token']
-        if not isinstance(token_dict, dict) or 'token' not in token_dict:
-            raise ValueError("Invalid token format in metadata")
+        player_state = game.players[req_player_name]
+        if player_state.get("connected", True):
+            return Response(None, "You are already connected. No need to reconnect.")
 
-        token_str = token_dict['token']
-        token_obj = self.__auth_service.validate_token_by_str(token_str)
-        if not token_obj:
-            raise ValueError("Invalid or expired token")
+        disconnected_time = player_state.get("disconnected_time", None)
+        if disconnected_time is None:
+            return Response(None, "No disconnected timestamp found. Can't reconnect.")
 
-        if required_role != Role.USER and token_obj.user.role != required_role:
-            raise ValueError(f"Operation requires {required_role}, but user role is {token_obj.user.role}")
-        return token_obj
+        if time.time() - disconnected_time > 120:
+            return Response(None, "Reconnection time (120s) has expired.")
+
+        player_state["connected"] = True
+        player_state["disconnected_time"] = None
+        return Response(f"Reconnection successful for {req_player_name}.", None)
 
     def stop(self):
         self.running = False
         self.server_socket.close()
 
-
 if __name__ == '__main__':
     server = MindRollServer(port=8080)
-    print("MindRoll Server: if a player times out => remove them & reset the game; no join if game started. Also reveals => reset.")
+    print("MindRoll Server with 'pull-style' game state for reveal_result -> all players see same info next poll.")
     server.start()
