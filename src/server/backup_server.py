@@ -13,6 +13,7 @@ class BackupServer:
     def update_games(self, games):
         """从主服务器同步游戏数据"""
         self.games = games
+        print("Backup Server: Games data updated") 
 
     def start(self):
         """启动备份服务器"""

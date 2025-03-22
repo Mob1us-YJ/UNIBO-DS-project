@@ -201,6 +201,7 @@ class MindRollServer:
             return Response(None, "Room already exists")
 
         self.games[room_id] = GameRoom(room_id)
+        self.sync_data()  
         return Response(f"Room {room_id} created successfully", None)
 
     def join_room(self, request):
@@ -208,12 +209,15 @@ class MindRollServer:
         real_username = token_obj.user.username
 
         room_id, req_player_name = request.args[:2]
+        
         if room_id not in self.games:
             return Response(None, "Room does not exist")
 
         game = self.games[room_id]
         try:
+            
             game.add_player(req_player_name)
+            self.sync_data()
             return Response(f"{req_player_name} joined room {room_id}", None)
         except ValueError as e:
             return Response(None, str(e))
@@ -226,6 +230,7 @@ class MindRollServer:
         game = self.games[room_id]
         try:
             game.call_number(req_player_name, number)
+            self.sync_data()
             return Response(f"{req_player_name} called {number}, next turn: {game.current_turn}", None)
         except ValueError as e:
             return Response(None, str(e))
@@ -238,6 +243,7 @@ class MindRollServer:
         game = self.games[room_id]
         try:
             result_info = game.reveal_result(req_player_name)
+            self.sync_data()
             for player_info in game.players.values():
                 client_socket = player_info.get("client_socket")
                 if client_socket:
