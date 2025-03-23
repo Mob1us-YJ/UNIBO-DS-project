@@ -7,16 +7,16 @@ class GameRoom:
     def __init__(self, room_id):
         self.room_id = room_id
         self.players = {}       # { username: {dice_number, dice_color, score, connected, disconnected_time } }
-        self.players_order = [] # 玩家加入顺序
+        self.players_order = [] 
         self.current_turn = None
         self.called_number = None
         self.winner = None
 
-        self.last_result_str = None   # 用于存储上一局的胜负或流局信息
-        self.last_result_time = None    # 记录上一局结果产生的时间
+        self.last_result_str = None   # save the last result string
+        self.last_result_time = None    # save the last result time
 
     def add_player(self, player_name):
-        # 如果游戏已开始（叫数不为 None），则拒绝加入
+        # Deny joining if game has already started
         if self.called_number is not None:
             raise ValueError("Game already started, cannot join room.")
         if player_name in self.players:
@@ -42,7 +42,7 @@ class GameRoom:
         if self.current_turn != player_name:
             raise ValueError("Not your turn to call")
 
-        # 若是第一次 call，则初始化叫数
+        # initial call number
         if self.called_number is None:
             self.called_number = max(3 * len(self.players) + 1, 7)
 
@@ -52,7 +52,7 @@ class GameRoom:
 
         self.called_number = number
 
-        # 更新下一个玩家
+        # update current turn
         if self.players_order:
             i = self.players_order.index(player_name)
             next_i = (i + 1) % len(self.players_order)
@@ -76,11 +76,11 @@ class GameRoom:
             self.winner = player_name
             self.players[player_name]["score"] += 1
 
-        # 记录结果及时间
+        # sacve the result string and time
         self.last_result_str = result_str
         self.last_result_time = time.time()
 
-        # 重置游戏状态（在 reveal_result 中立即重置新局）
+        # reset the game
         self.reset_game()
 
         result_info = {
@@ -94,25 +94,23 @@ class GameRoom:
         return result_info
 
     def reset_game(self):
-        # 移除所有已掉线的玩家
+        # remove disconnected players
         for username in list(self.players.keys()):
             if not self.players[username].get("connected", True):
                 self.remove_player(username)
 
-        # 重置游戏状态并为剩余玩家分配新骰子
+        # reset dice
         self.winner = None
         self.called_number = None
 
         for pinfo in self.players.values():
             pinfo["dice_number"] = random.randint(1, 6)
             pinfo["dice_color"] = random.choice(["red", "yellow", "green", "blue", "black"])
-            # 将剩余玩家状态重置为已连接
             pinfo["connected"] = True
             pinfo["disconnected_time"] = None
 
-        # 重置当前轮到玩家为 players_order[0]
+        # reset order
         if self.players_order:
-            # 同时也需要更新 players_order，移除已掉线的玩家
             self.players_order = [uname for uname in self.players_order if uname in self.players]
             self.current_turn = self.players_order[0] if self.players_order else None
         else:
@@ -121,10 +119,7 @@ class GameRoom:
 
     def maybe_clear_result(self):
         """
-        如果上次结果产生已超过规定时间，则清空 last_result_str，
-        并调用 reset_game() 确保新局开始。
-        对于流局信息("Game drawn due to disconnect timeout.")，阈值为3秒，
-        对于其他结果，阈值为5秒。
+        clear the last result string and time after 3 seconds
         """
         if self.last_result_str and self.last_result_time:
             now = time.time()
@@ -146,10 +141,7 @@ class GameRoom:
 
     def check_reconnection_timeout(self):
         """
-        检查断线玩家是否超时120秒。
-        如果发现有玩家超时，则将本局游戏判定为流局，
-        设置 last_result_str 为流局信息，并记录时间，
-        之后由 maybe_clear_result 在3秒后清空结果并重置游戏。
+        check if any player has disconnected for more than 60 seconds.
         """
         now = time.time()
         timeout_occurred = False
@@ -163,5 +155,4 @@ class GameRoom:
             if not self.last_result_str:
                 self.last_result_str = "Game drawn due to disconnect timeout."
                 self.last_result_time = time.time()
-            # 不直接调用 reset_game()，等待 maybe_clear_result() 3秒后自动清空
 

@@ -30,16 +30,16 @@ class MindRollServer:
         self.games = {}
 
     def set_backup_server(self, backup_server):
-         """设置备份服务器"""
+         """Set the backup server for this server."""
          self.backup_server = backup_server
 
     def sync_data(self):
-         """同步数据到备份服务器"""
+         """Sync game data with the backup server."""
          if self.backup_server:
             self.backup_server.update_games(self.games)
 
     def update_games(self, games):
-        """更新游戏数据"""
+        """Update the game data from the backup server."""
         self.games = games
 
     def start(self):
@@ -84,7 +84,7 @@ class MindRollServer:
                     self.send_response(client_socket, error_resp)
                     continue
 
-                # 若带token则记录
+                # Check if token is present in metadata
                 if 'token' in request_obj.metadata:
                     token_dict = request_obj.metadata['token']
                     if 'token' in token_dict:
@@ -205,7 +205,6 @@ class MindRollServer:
         if room_id not in self.games:
             return Response(None, "Room does not exist")
         game = self.games[room_id]
-        # 如果游戏已开始（即已经有叫数），则拒绝新玩家加入
         if game.called_number is not None:
             return Response(None, "Game Started, can't join")
         try:
@@ -230,8 +229,8 @@ class MindRollServer:
 
     def reveal_result(self, request):
         """
-        当本玩家点击“Reveal” => game.reveal_result() => 返回本轮结果和新状态
-        其它玩家下次拉取 get_game_state 就能看到 game.last_result_str + 新骰子
+        "Reveal” => game.reveal_result() =>  current_turn = None, last_result_str = "xxx" =>
+        others get_game_state --> game.last_result_str + new dice
         """
         room_id, req_player_name = request.args[:2]
         if room_id not in self.games:
@@ -241,7 +240,6 @@ class MindRollServer:
         try:
             result_info = game.reveal_result(req_player_name)
             self.sync_data()
-            # 这里 result_info["result_str"] 是本轮结果
             return Response(result_info, None)
         except ValueError as e:
             return Response(None, str(e))
@@ -251,8 +249,8 @@ class MindRollServer:
         if room_id not in self.games:
             return Response(None, "Room does not exist")
         game = self.games[room_id]
-        game.check_reconnection_timeout()  # 检查断线玩家是否超时，若超时则流局并重置
-        game.maybe_clear_result()          # 检查是否超过结果显示时间（流局3秒，其他5秒），清空 last_result_str
+        game.check_reconnection_timeout()  # check if any player reconnected after 60s
+        game.maybe_clear_result()          # check game result after 3s or 5s
 
         game_state = {
             "players": game.players,

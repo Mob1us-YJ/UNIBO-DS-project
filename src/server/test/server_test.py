@@ -10,7 +10,7 @@ import unittest
 import threading
 import time
 
-
+"""Test if backup server can take over when main server fails."""
 class TestIntegration(unittest.TestCase):
     def setUp(self):
         self.main_server = MindRollServer()
@@ -18,21 +18,20 @@ class TestIntegration(unittest.TestCase):
         self.main_server.set_backup_server(self.backup_server)
 
     def test_failover(self):
-        # 启动主服务器
+        # 
         main_thread = threading.Thread(target=self.main_server.start)
         main_thread.start()
-        time.sleep(1)  # 等待主服务器启动
+        time.sleep(1)  
 
-        # 模拟主服务器故障
+ 
         self.main_server.running = False
-        time.sleep(1)  # 等待主服务器停止
+        time.sleep(1)  
 
-        # 启动备用服务器
+
         backup_thread = threading.Thread(target=self.backup_server.start)
         backup_thread.start()
-        time.sleep(1)  # 等待备用服务器启动
+        time.sleep(1) 
 
-        # 验证备用服务器是否接管
         self.assertTrue(self.backup_server.running)
 
 if __name__ == "__main__":

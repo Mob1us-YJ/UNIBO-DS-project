@@ -19,10 +19,10 @@ class User:
         self.username = username
         self.email = email
         self.full_name = full_name
-        # role如果是字符串，就转Enum；若已是Enum就直接用
+        
         self.role = Role(role) if isinstance(role, str) else role
 
-        # ✅ 如果密码不是sha256哈希，就hash一下
+       
         if len(password) == 64 and all(c in "0123456789abcdef" for c in password):
             self.password = password
         else:
@@ -107,7 +107,7 @@ class UserDatabase:
         if username in self.users:
             return "User already exists"
 
-        # 构造 User 时: email="N/A", full_name=username, role="user"
+
         new_user = User(
             username=username,
             email="N/A",
@@ -157,14 +157,14 @@ if __name__ == "__main__":
 
     try:
         if command == "add":
-            # 现在仅需要 --user, --password
+            #--user, --password
             username = sys.argv[sys.argv.index("--user") + 1]
             password = sys.argv[sys.argv.index("--password") + 1]
             result = user_db.add_user(username, password)
             print(result)
 
         elif command == "auth":
-            # 需要 --user, --password, --save-token
+            # --user, --password, --save-token
             username = sys.argv[sys.argv.index("--user") + 1]
             password = sys.argv[sys.argv.index("--password") + 1]
             token_file = sys.argv[sys.argv.index("--save-token") + 1]
@@ -177,7 +177,7 @@ if __name__ == "__main__":
                 print("Authentication failed")
 
         elif command == "get":
-            # 需要 --user
+            #  --user
             username = sys.argv[sys.argv.index("--user") + 1]
             user = user_db.get_user(username)
             if user:
@@ -186,7 +186,7 @@ if __name__ == "__main__":
                 print("User not found")
 
         elif command == "update_score":
-            # 需要 --user, --score
+            #  --user, --score
             username = sys.argv[sys.argv.index("--user") + 1]
             score_change = int(sys.argv[sys.argv.index("--score") + 1])
             print(user_db.update_score(username, score_change))

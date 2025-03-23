@@ -4,7 +4,7 @@ import sys
 import os
 import time
 
-# 确保能正确导入 src/
+# import src/
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from src.common.models import GameObject
@@ -15,12 +15,12 @@ from src.client.rpc_client import MindRollClient
 pygame.init()
 pygame.font.init()
 
-# ------------------- 客户端连接配置 -------------------
+# ------------------- client Setup------------------
 server_ip = "127.0.0.1"
 server_port = 8080
 client = MindRollClient((server_ip, server_port))
 
-# ------------------- 窗口基本参数 -------------------
+# ------------------- Screen Setup -------------------
 SCREEN_SIZE = (800, 600)
 screen = pygame.display.set_mode(SCREEN_SIZE)
 pygame.display.set_caption("MindRoll")
@@ -34,7 +34,7 @@ RED = (255, 0, 0)
 def get_font(size):
     return pygame.font.Font(None, size)
 
-# ------------------- 游戏状态枚举 -------------------
+# ------------------- Game State -------------------
 STATE_MAIN_MENU = "main_menu"
 STATE_REGISTER = "register"
 STATE_LOGIN = "login"
@@ -53,24 +53,21 @@ register_password = ""
 login_account = ""
 login_password = ""
 
-# 本地玩家的分数和骰子
 player_score = 0
 player_dice = ("red", 1)  # (dice_color, dice_number)
 
-# 用于在某些场景输入数字
 input_text = ""
 
-# 用于在注册/登录时切换输入框焦点
 active_input = "account"
 
-# --------------- 定时拉取相关 ---------------
+# --------------- get winner state ---------------
 last_pull_time = 0.0
-PULL_INTERVAL = 1.0  # 每1秒拉一次
+PULL_INTERVAL = 1.0  
 
-# 缓存服务器返回的房间状态
+
 cached_game_state = None
 
-# ------------------- Dice资源 -------------------
+# ------------------- Dice-------------------
 DICE_COLORS = ["red", "yellow", "green", "blue", "black"]
 DICE_SIZE = (300, 300)
 
@@ -88,7 +85,6 @@ def load_dice_images():
 dice_images = load_dice_images()
 
 def show_message(message):
-    """屏幕中间弹窗显示 message，停顿2秒后返回"""
     popup_width, popup_height = 600, 100
     popup_x = (SCREEN_SIZE[0] - popup_width) // 2
     popup_y = (SCREEN_SIZE[1] - popup_height) // 2
@@ -112,7 +108,7 @@ def draw_button(text, rect, color, font_size=36):
     text_rect = text_surface.get_rect(center=rect.center)
     screen.blit(text_surface, text_rect)
 
-# ------------------- 主要场景函数 -------------------
+# ------------------- Main Menu -------------------
 def main_menu():
     global current_state
     screen.fill(BLACK)
@@ -338,10 +334,10 @@ def mod_screen():
 
     return True
 
-# ------------------- 轮询间隔全局 -------------------
+# ------------------- Queue Request-------------------
 last_pull_time = 0.0
 PULL_INTERVAL = 1.0
-cached_game_state = None  # 缓存服务器返回的房间状态
+cached_game_state = None  #
 
 def game_screen():
     global current_state, player_dice, input_text, selected_room, player_score
@@ -350,7 +346,7 @@ def game_screen():
     screen.fill(BLACK)
     font = get_font(30)
 
-    # -- 轮询逻辑：每隔 PULL_INTERVAL 秒调用 get_game_state --
+    # -- PULL_INTERVAL --> get_game_state --
     now = time.time()
     if selected_room and (now - last_pull_time > PULL_INTERVAL):
         last_pull_time = now
@@ -358,18 +354,17 @@ def game_screen():
         if resp and not resp.error:
             cached_game_state = resp.result
 
-            # 若服务器端有 last_result_str => 显示
             last_result_str = cached_game_state.get("last_result_str", None)
             if last_result_str:
                 show_message(last_result_str)
 
-            # 更新本地玩家的骰子/分数
+            # update player info
             if login_account in cached_game_state.get("players", {}):
                 pinfo = cached_game_state["players"][login_account]
                 player_dice = (pinfo["dice_color"], pinfo["dice_number"])
                 player_score = pinfo["score"]
 
-            # 如果房间玩家已空 => 回到主菜单
+            # check if room is empty
             if not cached_game_state["players"]:
                 show_message("Room is empty or removed; returning to menu.")
                 current_state = STATE_MAIN_MENU
@@ -377,8 +372,6 @@ def game_screen():
             show_message("Failed to get game state. Possibly room removed.")
             current_state = STATE_MAIN_MENU
 
-    # ------------------- 以下保持你的布局不变 -------------------
-    # 先从 cached_game_state 里拿到所需信息
     current_call_number = 0
     current_turn_player = "Unknown"
     players_in_room = 0
@@ -388,7 +381,6 @@ def game_screen():
         players_dict = cached_game_state.get("players", {})
         players_in_room = len(players_dict)
 
-    # 界面布局
     room_info = font.render(f"Current Room: {selected_room if selected_room else 'None'}", True, WHITE)
     screen.blit(room_info, (20, 20))
 
@@ -407,19 +399,19 @@ def game_screen():
     player_info = font.render(f"User: {login_account}", True, WHITE)
     screen.blit(player_info, (400, 20))
 
-    # 画骰子
+    # current dice
     dice_color, dice_number = player_dice
     dice_image = dice_images[dice_color][dice_number]
     screen.blit(dice_image, (50, 230))
 
-    # 输入框
+    # input box
     input_box = pygame.Rect(450, 200, 100, 50)
     pygame.draw.rect(screen, GRAY, input_box)
     pygame.draw.rect(screen, WHITE, input_box, 2)
     text_surface = font.render(input_text, True, BLACK)
     screen.blit(text_surface, (input_box.x + 10, input_box.y + 10))
 
-    # 按钮
+    # buttons
     call_button = pygame.Rect(600, 200, 150, 50)
     reveal_button = pygame.Rect(600, 300, 150, 50)
     #back_button = pygame.Rect(600, 400, 150, 50)
@@ -432,7 +424,7 @@ def game_screen():
 
     pygame.display.flip()
 
-    # ------------------- 事件处理 -------------------
+    # ------------------- Handle Request -------------------
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             return False
@@ -441,7 +433,7 @@ def game_screen():
             if event.key == pygame.K_BACKSPACE:
                 input_text = input_text[:-1]
             elif event.key == pygame.K_RETURN:
-                # 回车 => call
+                # Return => call
                 try:
                     call_value = int(input_text)
                     if selected_room:
@@ -482,16 +474,16 @@ def game_screen():
                     resp_reveal = client.reveal_result(selected_room, login_account)
                     if resp_reveal and not resp_reveal.error:
                         result_info = resp_reveal.result
-                        # 本地立即显示
+                        # show local message
                         show_message(f"Reveal: {result_info['result_str']}")
 
-                        # 更新本地玩家信息
+                        # update player info
                         if login_account in result_info["players"]:
                             pinfo = result_info["players"][login_account]
                             player_score = pinfo["score"]
                             player_dice = (pinfo["dice_color"], pinfo["dice_number"])
 
-                        # 强制让下轮立即拉取
+                        # update cached game state
                         last_pull_time = 0
                     else:
                         show_message(f"Reveal failed: {(resp_reveal.error if resp_reveal else 'Unknown Error')}")
@@ -521,7 +513,7 @@ def login_wait_screen():
     current_state = STATE_MOD_SCREEN
     return True
 
-# ------------------- 主循环 -------------------
+# ------------------- main -------------------
 running = True
 while running:
     if current_state == STATE_MAIN_MENU:

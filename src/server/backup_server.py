@@ -8,15 +8,15 @@ class BackupServer:
         self.port = port
         self.server_socket = None
         self.running = False
-        self.games = {}  # 游戏房间数据
+        self.games = {}  # Game room data
 
     def update_games(self, games):
-        """从主服务器同步游戏数据"""
+        """get data from primary server"""
         self.games = games
         print("Backup Server: Games data updated") 
 
     def start(self):
-        """启动备份服务器"""
+        """Start the backup server."""
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.bind((self.host, self.port))
         self.server_socket.listen(5)
@@ -33,5 +33,3 @@ class BackupServer:
 
         self.server_socket.close()
         print("Backup Server stopped")
-
-    # 其他备份服务器逻辑...
