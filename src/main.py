@@ -1,5 +1,9 @@
 # src/server/main.py
-from server.rpc_server import MindRollServer
+import sys
+import os
+# import src/
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from src.server.rpc_server import MindRollServer
 
 if __name__ == '__main__':
     server = MindRollServer(port=8080)
