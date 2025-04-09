@@ -38,9 +38,13 @@ This will start the server on localhost:8080.
 python -m src.client.ui
 ```
 ## Authors
-👤 Authors
+
 Tianyu Qu
 
 Yiming Li
 
 Jing Yang
+
+## 🔗 Demo
+Gameplay demo video (Google Drive):
+https://drive.google.com/file/d/15Pi-7NfqE3VXJuQ4OeM9TMEQ1zieuIZN/view?usp=drive_link
