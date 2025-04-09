@@ -8,7 +8,8 @@ import time
 from datetime import datetime, timedelta
 
 from src.common.utils import Request, Response, serialize, deserialize
-from src.common.users.impl import InMemoryUserDatabase, InMemoryAuthenticationService
+from src.common.users.mongo_user_service import MongoUserService
+from src.common.users.mongo_auth_service import MongoAuthenticationService
 from src.common.users import Role, Token, Credentials, User
 from src.server.game_logic import GameRoom
 from src.server.backup_server import BackupServer
@@ -23,8 +24,8 @@ class MindRollServer:
         self.games = {}
         self.backup_server = None
 
-        self.__user_db = InMemoryUserDatabase(debug=True)
-        self.__auth_service = InMemoryAuthenticationService(self.__user_db, debug=True)
+        self.__user_db = MongoUserService()
+        self.__auth_service = MongoAuthenticationService(self.__user_db)
 
         # { room_id: GameRoom(...) }
         self.games = {}
@@ -131,24 +132,27 @@ class MindRollServer:
             return Response(None, "Usage: register <username> <password>")
 
         username, password = request.args[:2]
-        new_user = User(username, "N/A", username, Role.USER, password)
+        new_user = User(username, username, Role.USER, password)
+        if self.__user_db.get_user_by_username(username):
+                return Response(None, "Username already exists")
         try:
             self.__user_db.add_user(new_user)
             return Response(f"Register success for {username}", None)
-        except ValueError as e:
-            return Response(None, str(e))
+        except Exception as e:
+            return Response(None, f"Registration failed: {e}")
+
 
     def login(self, request: Request) -> Response:
         if len(request.args) < 2:
             return Response(None, "Usage: login <username> <password>")
 
         username, password = request.args[:2]
-        duration = timedelta(hours=1)
         try:
-            token_obj = self.__auth_service.authenticate(Credentials(username, password), duration)
+            token_obj = self.__auth_service.authenticate(Credentials(username, password))
             return Response({"token": token_obj.signature}, None)
         except ValueError as e:
             return Response(None, str(e))
+
 
     def __check_authorization(self, request, required_role: Role = Role.USER):
         if 'token' not in request.metadata:

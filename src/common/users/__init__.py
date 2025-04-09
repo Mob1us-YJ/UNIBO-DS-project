@@ -17,19 +17,15 @@ class Datum:
 @dataclass
 class User(Datum):
     username: str
-    emails: set[str]
-    full_name: str | None = None
+    name: str | None = None
     role: Role = Role.USER
     password: str | None = None
 
     def __post_init__(self):
-        self.emails = set(self.emails)
         if self.role is None:
             self.role = Role.USER
         if not self.username:
             raise ValueError("Username is required")
-        if not self.emails:
-            raise ValueError("Email address is required")   
 
     @property
     def ids(self):
