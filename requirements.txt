@@ -1,5 +1,3 @@
-
-```txt
 bcrypt==4.3.0
 dnspython==2.7.0
 pygame==2.6.1
