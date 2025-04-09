@@ -32,6 +32,7 @@ Make sure MongoDB is running.
 python -m src.server.rpc_server
 ```
 This will start the server on localhost:8080.
+
 3. Run the Client (in a new terminal window)
 ```bash
 python -m src.client.ui
