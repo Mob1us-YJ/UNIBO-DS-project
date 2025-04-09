@@ -37,3 +37,10 @@ This will start the server on localhost:8080.
 ```bash
 python -m src.client.ui
 ```
+## Authors
+👤 Authors
+Tianyu Qu
+
+Yiming Li
+
+Jing Yang
